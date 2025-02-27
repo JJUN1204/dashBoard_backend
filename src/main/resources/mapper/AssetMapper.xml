@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.assetmanagement.asset.mapper.AssetMapper">
+
+    <!-- 자산 리스트 조회 -->
+    <select id="findAssetList" resultType="com.assetmanagement.asset.dto.Asset" parameterType="com.assetmanagement.asset.dto.SearchDto">
+        SELECT
+            #{totalCount} + 1 - ROW_NUMBER()
+                OVER(ORDER BY
+                <choose>
+                    <when test="sortColumn != null and sortColumn != ''">
+                        ${sortColumn} ${sortDirection}
+                    </when>
+                    <otherwise>
+                        ta.created_at desc-- 기본 정렬은 최신순
+                    </otherwise>
+                </choose>
+           ) AS row_num,
+            ta.*
+        FROM(
+        SELECT
+        a.id,
+        a.name,
+        a.ip,
+        a.serial_number AS serialNumber,
+        a.memo,
+        a.DEL_YN AS delyn,
+        a.created_at AS created_at,
+        a.type,
+        AT.type_name AS typeName,
+        (SELECT COUNT(apm_sub.part_id)
+        FROM asset_part_mapping apm_sub
+        WHERE apm_sub.asset_id = a.id) AS partCount
+        FROM
+        assets a
+        INNER JOIN
+        asset_type AT ON a.type = AT.type_code
+        WHERE
+        a.DEL_YN != 'Y'
+        <if test="keyword != null and keyword != ''">
+            AND (
+            <choose>
+                <when test="searchType == 'name'">
+                    a.name LIKE CONCAT('%', #{keyword}, '%')
+                </when>
+                <when test="searchType == 'serialNumber'">
+                    a.serial_number LIKE CONCAT('%', #{keyword}, '%')
+                </when>
+                <when test="searchType == 'type'">
+                    a.type LIKE CONCAT('%', #{keyword}, '%')
+                </when>
+                <otherwise>
+                    a.name LIKE CONCAT('%', #{keyword}, '%')
+                    OR a.serial_number LIKE CONCAT('%', #{keyword}, '%')
+                    OR a.type LIKE CONCAT('%', #{keyword}, '%')
+                </otherwise>
+            </choose>
+            )
+        </if>
+        ORDER BY
+        <choose>
+            <when test="sortColumn != null and sortColumn != ''">
+                #{sortColumn} #{sortDirection}
+            </when>
+            <otherwise>
+                a.created_at DESC  -- 기본 정렬은 최신순
+            </otherwise>
+        </choose>
+        ) ta
+
+
+        LIMIT #{offset}, #{recordSize};
+
+
+
+    </select>
+
+
+    <!-- 자산 수 카운트 -->
+    <select id="count" resultType="int" parameterType="com.assetmanagement.asset.dto.SearchDto">
+        SELECT COUNT(*)
+        FROM assets a
+        WHERE 1=1 and a.DEL_YN != 'Y'
+        <if test="keyword != null and keyword != ''">
+            AND (
+            <choose>
+                <when test="searchType == 'name'">
+                    a.name LIKE CONCAT('%', #{keyword}, '%')
+                </when>
+                <when test="searchType == 'ip'">
+                    a.ip LIKE CONCAT('%', #{keyword}, '%')
+                </when>
+                <when test="searchType == 'type'">
+                    a.type LIKE CONCAT('%', #{keyword}, '%')
+                </when>
+                <otherwise>
+                    a.name LIKE CONCAT('%', #{keyword}, '%')
+                    OR a.ip LIKE CONCAT('%', #{keyword}, '%')
+                    OR a.type LIKE CONCAT('%', #{keyword}, '%')
+                </otherwise>
+            </choose>
+            )
+        </if>
+    </select>
+
+    <!-- 자산 등록 -->
+    <insert id="insertAsset" parameterType="com.assetmanagement.asset.dto.Asset" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO assets (name, ip, type, serial_number, memo)
+        VALUES (#{name}, #{ip}, #{type}, #{serialNumber}, #{memo});
+    </insert>
+
+    <!-- 자산 수정 -->
+    <update id="updateAsset" parameterType="com.assetmanagement.asset.dto.Asset">
+        UPDATE assets
+        SET name = #{name}, ip = #{ip}, type = #{type}, serial_number = #{serialNumber}, memo = #{memo}
+        WHERE id = #{id};
+    </update>
+
+    <update id="unassignPartsFromAsset">
+        UPDATE parts
+        SET asset_id = NULL
+        WHERE asset_id = #{assetId};
+    </update>
+
+
+
+
+
+    <insert id="insertAssetWithParts" parameterType="com.assetmanagement.asset.dto.Asset">
+        INSERT INTO asset_part_mapping (asset_id, part_id)
+        VALUES
+        <foreach collection="partIds" item="partId" separator="," >
+            (
+            #{assetId}
+            ,#{partId}
+            )
+        </foreach>
+
+    </insert>
+
+    <!-- 자산에 부품 추가 (asset_id 업데이트) -->
+    <update id="updatePartAssetId">
+        UPDATE parts
+        SET asset_id = #{assetId}
+        WHERE id IN
+        <foreach collection="partIds" item="partId" separator="," open="(" close=")">
+            #{partId}
+        </foreach>
+        AND asset_id IS NULL;
+    </update>
+
+    <!-- 특정 자산 조회 -->
+    <select id="getAssetById" parameterType="int" resultType="com.assetmanagement.asset.dto.Asset">
+        SELECT id, name, ip, type, serial_number AS serialNumber, memo
+        FROM assets
+        WHERE id = #{id};
+    </select>
+
+    <!-- 자산 삭제 -->
+    <!--    <delete id="deleteAsset" parameterType="int">-->
+    <!--        DELETE FROM assets WHERE id = #{id};-->
+    <!--    </delete>-->
+
+    <update  id="deleteAsset" parameterType="com.assetmanagement.asset.dto.Asset">
+        UPDATE assets
+        SET DEL_YN = #{delyn}
+        WHERE id = #{id};
+    </update >
+
+    <delete id="unassignPartsByMappingIds" parameterType="com.assetmanagement.asset.dto.Asset">
+        DELETE FROM asset_part_mapping
+        WHERE
+        <foreach collection="mappingIds" item="mappingId" separator="OR">
+            (id  = #{mappingId})
+        </foreach>
+    </delete>
+
+
+    <delete id="unassignPartsByIds" parameterType="com.assetmanagement.asset.dto.Asset">
+        DELETE FROM asset_part_mapping
+        WHERE
+        <foreach collection="partIds" item="partId" separator="OR">
+            <!--            (asset_id = #{assetId} AND part_id = #{partId})-->
+            (id = #{mappingId})
+        </foreach>
+    </delete>
+
+
+
+    <!-- 특정 자산에 연결된 부품 조회 -->
+    <!-- 기존 매핑된 부품 리스트 조회 (mappingId 포함) -->
+    <select id="getPartsByAssetId" parameterType="int" resultType="com.assetmanagement.asset.dto.Part">
+        SELECT p.id, apm.id AS mappingId, apm.asset_id AS assetId, p.name, p.serial_number AS serialNumber, p.manufacturer
+        FROM parts p
+        JOIN asset_part_mapping apm ON p.id = apm.part_id
+        WHERE apm.asset_id = #{assetId};
+    </select>
+
+
+    <!-- 특정 자산에 연결된 부품 ID 리스트 조회 -->
+    <select id="getPartIdsByAssetId" parameterType="int" resultType="long">
+        SELECT part_id as id
+        FROM asset_part_mapping
+        WHERE asset_id = #{assetId};
+    </select>
+
+    <select id="getMappedPartIds" parameterType="int" resultType="long">
+        SELECT id as mappingId
+        FROM asset_part_mapping
+        WHERE asset_id = #{assetId};
+    </select>
+
+    <!-- 자산 종류 전체 조회 -->
+    <select id="getAllAssetTypes" resultType="com.assetmanagement.asset.dto.AssetType">
+        SELECT id, type_code AS typeCode, type_name AS typeName FROM asset_type;
+    </select>
+
+    <!-- 시리얼 넘버 조회 -->
+    <select id="findBySerialNumber" parameterType="java.lang.String" resultType="com.assetmanagement.asset.dto.Asset">
+        SELECT serial_number as serialNumber
+        FROM assets
+        WHERE serial_number = #{serialNumber}
+    </select>
+
+
+
+</mapper>

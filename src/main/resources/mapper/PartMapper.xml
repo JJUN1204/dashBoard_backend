@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.assetmanagement.asset.mapper.PartMapper">
+
+    <!-- 부품 리스트 조회 -->
+    <select id="findPartList" resultType="com.assetmanagement.asset.dto.Part" parameterType="com.assetmanagement.asset.dto.SearchDto">
+        SELECT
+        #{totalCount} + 1 - ROW_NUMBER()
+        OVER(ORDER BY
+        <choose>
+            <when test="sortColumn != null and sortColumn != ''">
+                ${sortColumn} ${sortDirection}
+            </when>
+            <otherwise>
+                ta.created_at desc-- 기본 정렬은 최신순
+            </otherwise>
+        </choose>
+        ) AS row_num,
+        ta.*
+        FROM(
+        SELECT
+        id, name, serial_number AS serialNumber, manufacturer, DEL_YN as delyn, created_at AS created_at
+        FROM parts
+        WHERE 1 = 1 AND DEL_YN != 'Y'
+        <if test="keyword != null and keyword != ''">
+            AND (
+            <choose>
+                <when test="searchType == 'name'">
+                    name LIKE CONCAT('%', #{keyword}, '%')
+                </when>
+                <when test="searchType == 'serialNumber'">
+                    serial_number LIKE CONCAT('%', #{keyword}, '%')
+                </when>
+                <when test="searchType == 'manufacturer'">
+                    manufacturer LIKE CONCAT('%', #{keyword}, '%')
+                </when>
+                <otherwise>
+                    name LIKE CONCAT('%', #{keyword}, '%')
+                    OR serial_number LIKE CONCAT('%', #{keyword}, '%')
+                    OR manufacturer LIKE CONCAT('%', #{keyword}, '%')
+                </otherwise>
+            </choose>
+            )
+        </if>
+        ORDER BY
+        <choose>
+            <when test="sortColumn != null and sortColumn != ''">
+                #{sortColumn} #{sortDirection}
+            </when>
+            <otherwise>
+                created_at DESC  -- 기본 정렬은 최신순
+            </otherwise>
+        </choose>
+        ) ta
+
+        LIMIT #{offset}, #{recordSize}
+    </select>
+
+    <!-- 부품 수 조회 -->
+    <select id="count" resultType="int" parameterType="com.assetmanagement.asset.dto.SearchDto">
+        SELECT COUNT(*)
+        FROM parts
+        WHERE 1 = 1 and DEL_YN != 'Y'
+        <if test="keyword != null and keyword != ''">
+            AND (
+            <choose>
+                <when test="searchType == 'name'">
+                    name LIKE CONCAT('%', #{keyword}, '%')
+                </when>
+                <when test="searchType == 'serialNumber'">
+                    serial_number LIKE CONCAT('%', #{keyword}, '%')
+                </when>
+                <when test="searchType == 'manufacturer'">
+                    manufacturer LIKE CONCAT('%', #{keyword}, '%')
+                </when>
+                <otherwise>
+                    name LIKE CONCAT('%', #{keyword}, '%')
+                    OR serial_number LIKE CONCAT('%', #{keyword}, '%')
+                    OR manufacturer LIKE CONCAT('%', #{keyword}, '%')
+                </otherwise>
+            </choose>
+            )
+        </if>
+    </select>
+
+    <!-- 부품 등록 -->
+    <insert id="insertPart" parameterType="com.assetmanagement.asset.dto.Part">
+        INSERT INTO parts (name, serial_number, manufacturer)
+        VALUES (#{name}, #{serialNumber}, #{manufacturer});
+    </insert>
+
+
+    <!-- 자산에 부품 할당 (asset_id가 NULL인 부품만 업데이트) -->
+    <update id="updatePartAssetId">
+        UPDATE parts
+        SET asset_id = #{assetId}
+        WHERE id IN
+        <foreach collection="partIds" item="partId" separator="," open="(" close=")">
+            #{partId}
+        </foreach>
+        AND asset_id IS NULL;
+    </update>
+
+    <!-- 부품 정보 수정 -->
+    <update id="updatePart" parameterType="com.assetmanagement.asset.dto.Part">
+        UPDATE parts
+        SET name = #{name},
+        serial_number = #{serialNumber},
+        manufacturer = #{manufacturer}
+        WHERE id = #{id};
+    </update>
+
+    <!-- 특정 부품 조회 -->
+    <select id="getPartById" parameterType="int" resultType="com.assetmanagement.asset.dto.Part">
+        SELECT id, name, serial_number AS serialNumber, manufacturer
+        FROM parts
+        WHERE id = #{id};
+    </select>
+
+    <!-- 부품 삭제 -->
+<!--    <delete id="deletePart" parameterType="int">-->
+<!--        DELETE FROM parts WHERE id = #{id};-->
+<!--    </delete>-->
+
+    <update id="deletePart" parameterType="com.assetmanagement.asset.dto.Part">
+        UPDATE parts
+        SET DEL_YN = #{delyn}
+        WHERE id = #{id};
+    </update>
+
+    <!-- 부품 조회 -->
+    <select id="findUnassignedParts" resultType="com.assetmanagement.asset.dto.Part">
+        SELECT id, name, serial_number AS serialNumber, manufacturer
+        FROM parts;
+<!--    WHERE asset_id IS NULL;-->
+    </select>
+
+
+    <!-- 사용자 조회 쿼리 -->
+    <select id="findBySerialNumber" parameterType="java.lang.String" resultType="com.assetmanagement.asset.dto.Part">
+        SELECT serial_number as serialNumber
+        FROM parts
+        WHERE serial_number = #{serialNumber}
+    </select>
+
+    <select id="getSerialNumber" resultType="com.assetmanagement.asset.dto.Part">
+        SELECT serial_number
+        FROM parts
+    </select>
+
+
+
+</mapper>
